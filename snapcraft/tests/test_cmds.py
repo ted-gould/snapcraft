@@ -14,6 +14,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import io
 import logging
 import os
 import tempfile
@@ -24,6 +25,7 @@ import fixtures
 from snapcraft import (
     cmds,
     common,
+    lifecycle,
     tests
 )
 
@@ -38,16 +40,12 @@ class TestCommands(tests.TestCase):
         self.addCleanup(tmpdirObject.cleanup)
         tmpdir = tmpdirObject.name
 
-        part1 = mock.Mock()
-        part1.name = 'part1'
-        part1.code.options.stage = ['*']
+        part1 = lifecycle.load_plugin('part1', 'jdk', {'source': '.'})
         part1.installdir = tmpdir + '/install1'
         os.makedirs(part1.installdir + '/a')
         open(part1.installdir + '/a/1', mode='w').close()
 
-        part2 = mock.Mock()
-        part2.name = 'part2'
-        part2.code.options.stage = ['*']
+        part2 = lifecycle.load_plugin('part2', 'jdk', {'source': '.'})
         part2.installdir = tmpdir + '/install2'
         os.makedirs(part2.installdir + '/a')
         with open(part2.installdir + '/1', mode='w') as f:
@@ -56,9 +54,7 @@ class TestCommands(tests.TestCase):
         with open(part2.installdir + '/a/2', mode='w') as f:
             f.write('a/2')
 
-        part3 = mock.Mock()
-        part3.name = 'part3'
-        part3.code.options.stage = ['*']
+        part3 = lifecycle.load_plugin('part3', 'jdk', {'source': '.'})
         part3.installdir = tmpdir + '/install3'
         os.makedirs(part3.installdir + '/a')
         os.makedirs(part3.installdir + '/b')
@@ -78,6 +74,29 @@ class TestCommands(tests.TestCase):
             '  1\n'
             '  a/2\n',
             fake_logger.output)
+
+    @mock.patch('sys.stdout', new_callable=io.StringIO)
+    def test_list_plugins(self, mock_stdout):
+        expected_list = '''ant
+autotools
+awscli
+awsiot
+catkin
+cmake
+copy
+go
+jdk
+make
+maven
+python2
+python3
+qml
+roscore
+scons
+tar-content
+'''
+        cmds.list_plugins()
+        self.assertEqual(mock_stdout.getvalue(), expected_list)
 
 
 class CleanTestCase(tests.TestCase):
