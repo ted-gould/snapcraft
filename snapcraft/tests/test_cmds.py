@@ -32,6 +32,11 @@ from snapcraft import (
 
 class TestCommands(tests.TestCase):
 
+    def setUp(self):
+        super().setUp()
+        common.set_schemadir(os.path.join(__file__,
+                             '..', '..', '..', 'schema'))
+
     def test_check_for_collisions(self):
         fake_logger = fixtures.FakeLogger(level=logging.ERROR)
         self.useFixture(fake_logger)
@@ -41,12 +46,12 @@ class TestCommands(tests.TestCase):
         tmpdir = tmpdirObject.name
 
         part1 = lifecycle.load_plugin('part1', 'jdk', {'source': '.'})
-        part1.installdir = tmpdir + '/install1'
+        part1.code.installdir = tmpdir + '/install1'
         os.makedirs(part1.installdir + '/a')
         open(part1.installdir + '/a/1', mode='w').close()
 
         part2 = lifecycle.load_plugin('part2', 'jdk', {'source': '.'})
-        part2.installdir = tmpdir + '/install2'
+        part2.code.installdir = tmpdir + '/install2'
         os.makedirs(part2.installdir + '/a')
         with open(part2.installdir + '/1', mode='w') as f:
             f.write('1')
@@ -55,7 +60,7 @@ class TestCommands(tests.TestCase):
             f.write('a/2')
 
         part3 = lifecycle.load_plugin('part3', 'jdk', {'source': '.'})
-        part3.installdir = tmpdir + '/install3'
+        part3.code.installdir = tmpdir + '/install3'
         os.makedirs(part3.installdir + '/a')
         os.makedirs(part3.installdir + '/b')
         with open(part3.installdir + '/1', mode='w') as f:
@@ -79,7 +84,6 @@ class TestCommands(tests.TestCase):
     def test_list_plugins(self, mock_stdout):
         expected_list = '''ant
 autotools
-awscli
 awsiot
 catkin
 cmake
@@ -88,6 +92,7 @@ go
 jdk
 make
 maven
+nil
 python2
 python3
 qml
@@ -121,6 +126,8 @@ class CleanTestCase(tests.TestCase):
         self.mock_rmdir = patcher.start()
         self.addCleanup(patcher.stop)
 
+        self.clean_calls = []
+
         class FakePart:
 
             def __init__(self, name, partdir):
@@ -129,6 +136,9 @@ class CleanTestCase(tests.TestCase):
 
             def names(self):
                 return [self.name, ]
+
+            def clean(s):
+                self.clean_calls.append(s.name)
 
         class FakeConfig:
             all_parts = [
@@ -145,15 +155,11 @@ class CleanTestCase(tests.TestCase):
         self.addCleanup(patcher.stop)
 
     def test_clean_all(self):
-        cmds.clean({})
+        class args:
+            parts = []
+        cmds.clean(args())
 
         self.mock_exists.assert_has_calls([
-            mock.call('partdir1'),
-            mock.call().__bool__(),
-            mock.call('partdir2'),
-            mock.call().__bool__(),
-            mock.call('partdir3'),
-            mock.call().__bool__(),
             mock.call(common.get_partsdir()),
             mock.call().__bool__(),
             mock.call(common.get_stagedir()),
@@ -163,25 +169,63 @@ class CleanTestCase(tests.TestCase):
         ])
 
         self.mock_rmtree.assert_has_calls([
-            mock.call('partdir1'),
-            mock.call('partdir2'),
-            mock.call('partdir3'),
             mock.call(common.get_stagedir()),
             mock.call(common.get_snapdir()),
         ])
 
         self.mock_rmdir.assert_called_once_with(common.get_partsdir())
+        self.assertEqual(self.clean_calls, ['part1', 'part2', 'part3'])
+
+    def test_clean_all_when_all_parts_specified(self):
+        class args:
+            parts = ['part1', 'part2', 'part3']
+        cmds.clean(args())
+
+        self.mock_exists.assert_has_calls([
+            mock.call(common.get_partsdir()),
+            mock.call().__bool__(),
+            mock.call(common.get_stagedir()),
+            mock.call().__bool__(),
+            mock.call(common.get_snapdir()),
+            mock.call().__bool__(),
+        ])
+
+        self.mock_rmtree.assert_has_calls([
+            mock.call(common.get_stagedir()),
+            mock.call(common.get_snapdir()),
+        ])
+
+        self.mock_rmdir.assert_called_once_with(common.get_partsdir())
+        self.assertEqual(self.clean_calls, ['part1', 'part2', 'part3'])
+
+    def test_partial_clean(self):
+        class args:
+            parts = ['part1']
+        cmds.clean(args())
+
+        self.mock_exists.assert_has_calls([
+            mock.call(common.get_partsdir()),
+            mock.call().__bool__(),
+            mock.call(common.get_snapdir()),
+            mock.call().__bool__(),
+        ])
+
+        self.mock_rmtree.assert_has_calls([
+            mock.call(common.get_snapdir()),
+        ])
+
+        self.mock_rmdir.assert_called_once_with(common.get_partsdir())
+        self.assertEqual(self.clean_calls, ['part1'])
 
     def test_everything_is_clean(self):
         self.mock_exists.return_value = False
         self.mock_listdir.side_effect = FileNotFoundError()
 
-        cmds.clean({})
+        class args:
+            parts = []
+        cmds.clean(args())
 
         self.mock_exists.assert_has_calls([
-            mock.call('partdir1'),
-            mock.call('partdir2'),
-            mock.call('partdir3'),
             mock.call(common.get_partsdir()),
             mock.call(common.get_stagedir()),
             mock.call(common.get_snapdir()),
@@ -189,13 +233,17 @@ class CleanTestCase(tests.TestCase):
 
         self.assertFalse(self.mock_rmdir.called)
         self.assertFalse(self.mock_rmtree.called)
+        self.assertEqual(self.clean_calls, ['part1', 'part2', 'part3'])
 
     def test_no_parts_defined(self):
         self.fake_config.all_parts = []
 
         self.mock_load_config.return_value = self.fake_config
 
-        cmds.clean({})
+        class args:
+            parts = []
+
+        cmds.clean(args())
 
         self.mock_exists.assert_has_calls([
             mock.call(common.get_stagedir()),
@@ -210,6 +258,21 @@ class CleanTestCase(tests.TestCase):
         ])
 
         self.mock_rmdir.assert_called_once_with(common.get_partsdir())
+
+    def test_part_to_remove_not_defined_exits_with_error(self):
+        fake_logger = fixtures.FakeLogger(level=logging.ERROR)
+        self.useFixture(fake_logger)
+
+        class args:
+            parts = ['does-not-exist']
+
+        with self.assertRaises(SystemExit) as raised:
+            cmds.clean(args())
+        self.assertEqual(raised.exception.code, 1, 'Wrong exit code returned.')
+        self.assertEqual(
+            "The part named 'does-not-exist' is not defined in "
+            "'snapcraft.yaml'\n",
+            fake_logger.output)
 
 
 class InitTestCase(tests.TestCase):
@@ -226,7 +289,8 @@ class InitTestCase(tests.TestCase):
         self.assertEqual(
             'snapcraft.yaml already exists!\n', fake_logger.output)
 
-    def test_init_without_parts_must_write_snapcraft_yaml(self):
+    @mock.patch('sys.stdout', new_callable=io.StringIO)
+    def test_init_without_parts_must_write_snapcraft_yaml(self, mock_stdout):
         fake_logger = fixtures.FakeLogger(level=logging.INFO)
         self.useFixture(fake_logger)
 
@@ -238,3 +302,14 @@ class InitTestCase(tests.TestCase):
         self.assertEqual(
             'Wrote the following as snapcraft.yaml.\n',
             fake_logger.output)
+
+        expected_out = '''
+name: # the name of the snap
+version: # the version of the snap
+# The vendor for the snap (replace 'Vendor <email@example.com>')
+vendor: Vendor <email@example.com>
+summary: # 79 char long summary
+description: # A longer description for the snap
+icon: # A path to an icon for the package
+'''
+        self.assertEqual(mock_stdout.getvalue(), expected_out)

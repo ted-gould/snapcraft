@@ -51,7 +51,8 @@ class PackageNotFoundError(Exception):
 
     @property
     def message(self):
-        return 'The Ubuntu package \'%s\' was not found' % self.package_name
+        return 'The Ubuntu package "{}" was not found'.format(
+            self.package_name)
 
     def __init__(self, package_name):
         self.package_name = package_name
@@ -61,7 +62,7 @@ class UnpackError(Exception):
 
     @property
     def message(self):
-        return 'Error while provisioning \'%s\'' % self.package_name
+        return 'Error while provisioning "{}"'.format(self.package_name)
 
     def __init__(self, package_name):
         self.package_name = package_name
@@ -75,6 +76,7 @@ class Ubuntu:
         self.recommends = recommends
         sources = sources or _DEFAULT_SOURCES
         local = False
+
         if 'SNAPCRAFT_LOCAL_SOURCES' in os.environ:
             print('using local sources')
             sources = _get_local_sources_list()
@@ -207,6 +209,9 @@ def _setup_apt_cache(rootdir, sources, local=False):
     with open(srcfile, 'w') as f:
         f.write(sources)
 
+    # Do not install recommends
+    apt.apt_pkg.config.set('Apt::Install-Recommends', 'False')
+
     # Make sure we always use the system GPG configuration, even with
     # apt.Cache(rootdir).
     for key in 'Dir::Etc::Trusted', 'Dir::Etc::TrustedParts':
@@ -268,9 +273,9 @@ def _fix_xml_tools(root):
 
 
 def _fix_filemode(path):
-    mode = stat.S_IMODE(os.stat(path).st_mode)
+    mode = stat.S_IMODE(os.stat(path, follow_symlinks=False).st_mode)
     if mode & 0o4000 or mode & 0o2000:
-        logger.debug('Removing suid/guid from {}'.format(path))
+        logger.warning('Removing suid/guid from {}'.format(path))
         os.chmod(path, mode & 0o1777)
 
 

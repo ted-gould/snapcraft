@@ -32,6 +32,9 @@ Additionally, this plugin uses the following plugin specific keywords:
     - requirements:
       (string)
       path to a requirements.txt file
+    - python-packages:
+      (list)
+      A list of dependencies to get from PyPi
 """
 
 import os
@@ -48,7 +51,7 @@ class Python3Plugin(snapcraft.BasePlugin):
         schema['properties']['requirements'] = {
             'type': 'string',
         }
-        schema['properties']['pip-packages'] = {
+        schema['properties']['python-packages'] = {
             'type': 'array',
             'minitems': 1,
             'uniqueItems': True,
@@ -70,8 +73,8 @@ class Python3Plugin(snapcraft.BasePlugin):
         ])
 
     def env(self, root):
-        return ["PYTHONPATH=%s" % os.path.join(
-            root, 'usr', 'lib', self.python_version, 'dist-packages')]
+        return ['PYTHONPATH={}'.format(os.path.join(
+            root, 'usr', 'lib', self.python_version, 'dist-packages'))]
 
     def pull(self):
         super().pull()
@@ -86,7 +89,7 @@ class Python3Plugin(snapcraft.BasePlugin):
             requirements = os.path.join(os.getcwd(), self.options.requirements)
 
         if not os.path.exists(setup) and not \
-                (self.options.requirements or self.options.pip_packages):
+                (self.options.requirements or self.options.python_packages):
             return
 
         easy_install = os.path.join(
@@ -109,13 +112,16 @@ class Python3Plugin(snapcraft.BasePlugin):
         if self.options.requirements:
             self.run(pip_install + ['--requirement', requirements])
 
-        if self.options.pip_packages:
-            self.run(pip_install + ['--upgrade'] + self.options.pip_packages)
+        if self.options.python_packages:
+            self.run(pip_install + ['--upgrade'] +
+                     self.options.python_packages)
 
         if os.path.exists(setup):
-            self.run(pip_install + ['.', ])
+            self.run(pip_install + ['.', ], cwd=self.sourcedir)
 
     def build(self):
+        super().build()
+
         # If setuptools is used, it tries to create files in the
         # dist-packages dir and import from there, so it needs to exist
         # and be in the PYTHONPATH. It's harmless if setuptools isn't
@@ -138,7 +144,7 @@ class Python3Plugin(snapcraft.BasePlugin):
 
     @property
     def python_version(self):
-        return self.run_output(['py3versions', '-i']).split()[0]
+        return self.run_output(['py3versions', '-d'])
 
     # Takes the setup.py file and puts a couple little gems on the
     # front to make things work better.
@@ -154,3 +160,19 @@ class Python3Plugin(snapcraft.BasePlugin):
 
         setupout.flush()
         return setupout
+
+    def snap_fileset(self):
+        fileset = super().snap_fileset()
+        fileset.append('-usr/bin/pip*')
+        fileset.append('-usr/lib/python*/dist-packages/easy-install.pth')
+        fileset.append('-usr/lib/python*/__pycache__/*.pyc')
+        fileset.append('-usr/lib/python*/*/__pycache__/*.pyc')
+        fileset.append('-usr/lib/python*/*/*/__pycache__/*.pyc')
+        fileset.append('-usr/lib/python*/*/*/*/__pycache__/*.pyc')
+        fileset.append('-usr/lib/python*/*/*/*/*/__pycache__/*.pyc')
+        fileset.append('-usr/lib/python*/*/*/*/*/*/__pycache__/*.pyc')
+        fileset.append('-usr/lib/python*/*/*/*/*/*/*/__pycache__/*.pyc')
+        fileset.append('-usr/lib/python*/*/*/*/*/*/*/*/__pycache__/*.pyc')
+        fileset.append('-usr/lib/python*/*/*/*/*/*/*/*/*/__pycache__/*.pyc')
+        fileset.append('-usr/lib/python*/*/*/*/*/*/*/*/*/*/__pycache__/*.pyc')
+        return fileset
